@@ -23,15 +23,15 @@ The result is a robust method for identifying solar disturbances using radio tra
 Doppler residuals are converted into phase:
 
 
-$\phi(t) = 2\pi \int f(t)\,dt$
+$\phi(t) = 2\pi \int f(t)\ dt$
 
 
 
 Band-limited phase RMS is computed using a power spectral density (PSD) method over:
 
-\[
-3 \times 10^{-4} \le f \le 3 \times 10^{-2} \ \text{Hz}
-\]
+
+$3 \times 10^{-4} \le f \le 3 \times 10^{-2} \ \text{Hz}$
+
 
 ---
 
@@ -41,15 +41,13 @@ Phase scintillation depends strongly on solar elongation (SEP).
 
 A quiet baseline is constructed:
 
-\[
-\phi_{\text{expected}} = f(\text{elongation})
-\]
+$\phi_{\text{expected}} = f(\text{elongation})$
+
 
 The signal is normalised:
 
-\[
-\text{phase\_ratio} = \frac{\phi_{\text{observed}}}{\phi_{\text{expected}}}
-\]
+
+$\text{phase\_ratio} = \frac{\phi_{\text{observed}}}{\phi_{\text{expected}}}$
 
 ---
 
@@ -67,9 +65,8 @@ CIRs are identified as long-duration enhancements using:
 
 CIR background is removed:
 
-\[
-\text{clean\_signal} = \frac{\text{phase\_ratio}}{\text{phase\_smooth}}
-\]
+
+$\text{clean\_signal} = \frac{\text{phase\_ratio}}{\text{phase\_smooth}}$
 
 Transient events are identified via:
 
@@ -79,7 +76,7 @@ Transient events are identified via:
 ---
 
 ## Repository Structure
-
+$
 Repository Structure
 ECC/
 │
@@ -102,7 +99,7 @@ ECC/
 ├── README.md
 ├── LICENSE
 └── .gitignore
-
+$
 ---
 
 ## Workflow
