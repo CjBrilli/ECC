@@ -74,32 +74,28 @@ Transient events are identified via:
 - duration filtering (0.25–24 hours)  
 
 ---
-
 ## Repository Structure
 
-Repository Structure
-ECC/  
-│   
-├── config/                # Configuration files and parameters  
-├── data_links/            # References to external datasets  
-├── inputs/                # Input data (local or linked)  
-├── notebooks/             # Analysis notebooks  
-│         ├── daily_rms/  
-│       ├── phase_scintillation/  
-│       ├── detection_pipeline/  
-│       └── multi_year_analysis/  
-│    
-├── src/                   # Core processing modules  
-│   ├── io.py  
-│   ├── phase.py    
-│   ├── spectral.py  
-│   ├── tec_model.py  
-│   └── detection.py  
-│  
-├── README.md  
-├── LICENSE  
-└── .gitignore  
-
+```text
+ECC/
+├── config/
+├── data_links/
+├── inputs/
+├── notebooks/
+│   ├── daily_rms/
+│   ├── phase_scintillation/
+│   ├── detection_pipeline/
+│   └── multi_year_analysis/
+├── src/
+│   ├── io.py
+│   ├── phase.py
+│   ├── spectral.py
+│   ├── tec_model.py
+│   └── detection.py
+├── README.md
+├── LICENSE
+└── .gitignore
+```
 ---
 
 ## Workflow
