@@ -47,7 +47,7 @@ $\phi_{\text{expected}} = f(\text{elongation})$
 The signal is normalised:
 
 
-$\text{phase\_ratio} = \frac{\phi_{\text{observed}}}{\phi_{\text{expected}}}$
+$\text{phase ratio} = \frac{\phi_{\text{observed}}}{\phi_{\text{expected}}}$
 
 ---
 
@@ -66,7 +66,7 @@ CIRs are identified as long-duration enhancements using:
 CIR background is removed:
 
 
-$\text{clean\_signal} = \frac{\text{phase\_ratio}}{\text{phase\_smooth}}$
+$\text{clean signal} = \frac{\text{phase ratio}}{\text{phase smooth}}$
 
 Transient events are identified via:
 
@@ -76,30 +76,30 @@ Transient events are identified via:
 ---
 
 ## Repository Structure
-$
+
 Repository Structure
-ECC/
-│
-├── config/              # Configuration files and parameters
-├── data_links/          # References to external datasets
-├── inputs/              # Input data (local or linked)
-├── notebooks/           # Analysis notebooks
-│   ├── daily_rms/
-│   ├── phase_scintillation/
-│   ├── detection_pipeline/
-│   └── multi_year_analysis/
-│
-├── src/                 # Core processing modules
-│   ├── io.py
-│   ├── phase.py
-│   ├── spectral.py
-│   ├── tec_model.py
-│   └── detection.py
-│
-├── README.md
-├── LICENSE
-└── .gitignore
-$
+ECC/  
+│   
+├── config/                # Configuration files and parameters  
+├── data_links/            # References to external datasets  
+├── inputs/                # Input data (local or linked)  
+├── notebooks/             # Analysis notebooks  
+│         ├── daily_rms/  
+│       ├── phase_scintillation/  
+│       ├── detection_pipeline/  
+│       └── multi_year_analysis/  
+│    
+├── src/                   # Core processing modules  
+│   ├── io.py  
+│   ├── phase.py    
+│   ├── spectral.py  
+│   ├── tec_model.py  
+│   └── detection.py  
+│  
+├── README.md  
+├── LICENSE  
+└── .gitignore  
+
 ---
 
 ## Workflow
