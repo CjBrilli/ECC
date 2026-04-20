@@ -25,6 +25,9 @@ Doppler residuals are converted into phase:
 \[
 \phi(t) = 2\pi \int f(t)\,dt
 \]
+[
+\phi(t) = 2\pi \int f(t),dt
+]
 
 Band-limited phase RMS is computed using a power spectral density (PSD) method over:
 
