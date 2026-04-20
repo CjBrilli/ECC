@@ -79,37 +79,28 @@ Transient events are identified via:
 
 ## Repository Structure
 
-## Repository Structure
-dsn_multi_year/
+Repository Structure
+ECC/
 │
-├── notebooks/
-│ ├── 01_daily_rms.ipynb
-│ ├── 02_phase_scintillation.ipynb
-│ ├── 03_cir_cme_detection.ipynb
-│ └── 04_multi_year_analysis.ipynb
+├── config/              # Configuration files and parameters
+├── data_links/          # References to external datasets
+├── inputs/              # Input data (local or linked)
+├── notebooks/           # Analysis notebooks
+│   ├── daily_rms/
+│   ├── phase_scintillation/
+│   ├── detection_pipeline/
+│   └── multi_year_analysis/
 │
-├── src/
-│ ├── io_utils.py
-│ ├── doppler_utils.py
-│ ├── phase_utils.py
-│ ├── detection_utils.py
-│ └── plot_utils.py
+├── src/                 # Core processing modules
+│   ├── io.py
+│   ├── phase.py
+│   ├── spectral.py
+│   ├── tec_model.py
+│   └── detection.py
 │
-├── config/
-│ ├── settings_2010.py
-│ ├── settings_2011.py
-│ ├── settings_2012.py
-│ ├── settings_2013.py
-│ └── settings_2014.py
-│
-├── outputs/
-│ └── <year>/
-│ ├── daily_metrics_<year>.csv
-│ ├── phase_windows_<year>.csv
-│ ├── cir_regions_<year>.csv
-│ └── transient_events_<year>.csv
-│
-└── README.md
+├── README.md
+├── LICENSE
+└── .gitignore
 
 ---
 
