@@ -1,3 +1,11 @@
+# DSN-Based Detection of CIRs and CMEs from Doppler Scintillation
+
+This repository implements a complete, reproducible pipeline for detecting solar wind structures — specifically Co-rotating Interaction Regions (CIRs) and Coronal Mass Ejections (CMEs) — using Deep Space Network (DSN) Doppler tracking data of *Venus Express (VEX)*.
+
+The method uses phase scintillation analysis and a physically motivated normalisation pipeline to isolate heliospheric disturbances from geometric and background effects.
+
+---
+
 ## Overview
 
 DSN Doppler measurements contain signatures of:
@@ -22,16 +30,11 @@ The result is a robust method for identifying solar disturbances using radio tra
 
 Doppler residuals are converted into phase:
 
-
 $\phi(t) = 2\pi \int f(t)\ dt$
-
-
 
 Band-limited phase RMS is computed using a power spectral density (PSD) method over:
 
-
 $3 \times 10^{-4} \le f \le 3 \times 10^{-2} \ \text{Hz}$
-
 
 ---
 
@@ -43,9 +46,7 @@ A quiet baseline is constructed:
 
 $\phi_{\text{expected}} = f(\text{elongation})$
 
-
 The signal is normalised:
-
 
 $\text{phase ratio} = \frac{\phi_{\text{observed}}}{\phi_{\text{expected}}}$
 
@@ -65,7 +66,6 @@ CIRs are identified as long-duration enhancements using:
 
 CIR background is removed:
 
-
 $\text{clean signal} = \frac{\text{phase ratio}}{\text{phase smooth}}$
 
 Transient events are identified via:
@@ -74,9 +74,11 @@ Transient events are identified via:
 - duration filtering (0.25–24 hours)  
 
 ---
+
 ## Repository Structure
 
-```text
+
+```
 ECC/
 ├── config/
 ├── data_links/
@@ -87,15 +89,18 @@ ECC/
 │   ├── detection_pipeline/
 │   └── multi_year_analysis/
 ├── src/
-│   ├── io.py
-│   ├── phase.py
-│   ├── spectral.py
-│   ├── tec_model.py
-│   └── detection.py
+│   ├── io_utils.py
+│   ├── phase_utils.py
+│   ├── geometry_utils.py
+│   ├── plot_utils.py
+│   └── detection_utils.py
 ├── README.md
 ├── LICENSE
 └── .gitignore
 ```
+---
+
+
 ---
 
 ## Workflow
@@ -122,6 +127,15 @@ ECC/
 
 ---
 
+## Key Outputs
+
+- Phase RMS time series (20-minute windows)
+- Normalised phase ratio (observed / expected)
+- Detected disturbance intervals (start, end, duration)
+- CME match table with overlap metrics
+
+---
+
 ## Key Parameters
 
 | Parameter            | Value                | Description |
@@ -133,7 +147,10 @@ ECC/
 | CIR thresholds      | 1.4 / 1.2           | Hysteresis |
 | Transient threshold | 3.0                 | CME detection |
 | Transient step      | 20 min              | Critical for correct results |
+
 ---
+
+## Input Data Format
 
 ### Horizons Solar Elongation File
 
@@ -154,9 +171,7 @@ $$SOE
 2010-Jan-01 00:00  ...  2.6407 /L  ...
 2010-Jan-02 00:00  ...  2.4124 /L  ...
 $$EOE
-
----
-
+```
 ## Outputs
 
 For each year:
