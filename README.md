@@ -125,7 +125,22 @@ ECC/
 - Compares results across 2010–2014  
 - Generates summary statistics and figures  
 
----
+### Notebook 5 — CACTus CME Matching
+- Loads CACTus CME catalogue  
+- Propagates CMEs to line-of-sight geometry  
+- Matches DSN-detected transients to catalogued CMEs  
+- Applies:
+  - radial consistency checks  
+  - angular consistency checks  
+- Produces CME association tables  
+
+### Notebook 6 — DSN–PRIDE Validation
+- Compares DSN phase scintillation with PRIDE scintillation  
+- Performs:
+  - amplitude correlation analysis  
+  - cross-correlation (lag analysis)  
+- Evaluates consistency across 2010–2014  
+- Includes event-level comparison where PRIDE coverage exists  
 
 ## Key Outputs
 
