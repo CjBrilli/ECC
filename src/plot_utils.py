@@ -51,7 +51,7 @@ def plot_daily_rms_vs_sep(
     fig, ax1 = plt.subplots(figsize=(11, 5.5))
 
     ax1.scatter(
-        daily_df["decimal_year"],
+        daily_df["day"],
         daily_df["doppler_rms_mm_s"],
         s=20,
         alpha=0.7,
@@ -60,7 +60,7 @@ def plot_daily_rms_vs_sep(
 
     if "doppler_smooth_mm_s" in daily_df.columns:
         ax1.plot(
-            daily_df["decimal_year"],
+            daily_df["day"],
             daily_df["doppler_smooth_mm_s"],
             linewidth=2,
             label="Smoothed Doppler noise"
@@ -68,7 +68,7 @@ def plot_daily_rms_vs_sep(
 
     if "solar_smooth_mm_s" in daily_df.columns:
         ax1.plot(
-            daily_df["decimal_year"],
+            daily_df["day"],
             daily_df["solar_smooth_mm_s"],
             linewidth=2,
             label="DSN solar scintillation model"
@@ -76,7 +76,7 @@ def plot_daily_rms_vs_sep(
 
     if show_tropo and "tropo_smooth" in daily_df.columns:
         ax1.plot(
-            daily_df["decimal_year"],
+            daily_df["day"],
             daily_df["tropo_smooth"],
             linewidth=1.5,
             linestyle="--",
@@ -91,7 +91,7 @@ def plot_daily_rms_vs_sep(
     ax2 = ax1.twinx()
     if "elongation_deg" in daily_df.columns:
         ax2.plot(
-            daily_df["decimal_year"],
+            daily_df["day"],
             daily_df["elongation_deg"],
             color="black",
             linewidth=1.5,
@@ -520,3 +520,124 @@ def plot_multi_year_overview(
 
     finalize_figure(fig)
     return fig, axes
+# ============================================================
+# NOTEBOOK 5 — CME
+# ============================================================
+
+def plot_final_cme_candidates(
+    windows_df: pd.DataFrame,
+    final_events: pd.DataFrame,
+    year: str,
+    threshold: float = 3.0,
+) -> tuple[plt.Figure, plt.Axes]:
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+
+    ax.plot(
+        windows_df["mid"],
+        windows_df["clean_signal"],
+        linewidth=0.9,
+        alpha=0.8,
+        label="CIR-removed signal",
+    )
+
+    ax.axhline(1.0, color="black", linestyle="--", linewidth=1, label="Quiet level")
+    ax.axhline(threshold, color="red", linestyle="--", linewidth=1.2, label=f"Threshold = {threshold}")
+
+    if final_events is not None and not final_events.empty:
+        for _, e in final_events.iterrows():
+            ax.axvspan(e["start"], e["end"], color="red", alpha=0.22)
+
+    ax.set_yscale("log")
+    ax.set_xlabel("UTC time")
+    ax.set_ylabel("CIR-removed phase ratio")
+    ax.set_title(f"Final DSN CME-like candidates ({year})")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right")
+
+    apply_time_axis_format(ax)
+    finalize_figure(fig)
+
+    return fig, ax
+
+
+# ============================================================
+# NOTEBOOK 6 — DSN / PRIDE COMPARISON
+# ============================================================
+
+def plot_xcorr_summary(
+    xcorr_df: pd.DataFrame,
+) -> tuple[plt.Figure, tuple]:
+    """
+    Plot cross-correlation lag distribution and reliability diagnostic.
+    """
+    valid = xcorr_df[xcorr_df["used_for_summary"]].copy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    axes[0].hist(valid["best_lag_minutes"].dropna(), bins=15)
+    axes[0].axvline(0, color="black", linestyle="--")
+    axes[0].set_xlabel("Best lag (minutes)")
+    axes[0].set_ylabel("Number of days")
+    axes[0].set_title("Distribution of DSN–PRIDE best lags")
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].scatter(
+        valid["n_bins"],
+        valid["zero_lag_corr"],
+        label="Zero-lag correlation"
+    )
+    axes[1].scatter(
+        valid["n_bins"],
+        valid["best_corr"],
+        label="Best-lag correlation"
+    )
+    axes[1].set_xlabel("Number of 20-min bins")
+    axes[1].set_ylabel("Correlation")
+    axes[1].set_title("Correlation reliability vs coverage")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    finalize_figure(fig)
+    return fig, axes
+
+
+def plot_xcorr_day(
+    binned_df: pd.DataFrame,
+    day,
+    bin_minutes: int = 20,
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot DSN/PRIDE cross-correlation for one day.
+    """
+    from src.pride_comparison_utils import get_xcorr_for_day
+
+    lags_minutes, corr, best_lag = get_xcorr_for_day(
+        binned_df,
+        day,
+        bin_minutes=bin_minutes,
+    )
+
+    if lags_minutes is None:
+        raise ValueError("Not enough valid data for this day.")
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    ax.plot(lags_minutes, corr, marker="o")
+    ax.axvline(0, color="black", linestyle="--", linewidth=1, label="Zero lag")
+    ax.axvline(
+        best_lag,
+        color="red",
+        linestyle="--",
+        linewidth=1,
+        label=f"Best lag = {best_lag:.0f} min",
+    )
+
+    ax.set_xlabel("Lag (minutes)")
+    ax.set_ylabel("Normalised correlation")
+    ax.set_title(f"DSN–PRIDE cross-correlation — {pd.to_datetime(day).date()}")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    finalize_figure(fig)
+    return fig, ax

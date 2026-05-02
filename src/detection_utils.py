@@ -336,6 +336,161 @@ def detect_cir_regions(
 # BLOCK 5 — TRANSIENT / CME-LIKE DETECTION
 # ============================================================
 
+def detect_transient_candidates(
+    windows_df,
+    threshold=3.0,
+    min_consec_windows=2,
+    min_duration_hr=0.33,
+    max_duration_hr=12.0,
+    merge_gap_hr=0.67,
+):
+    import numpy as np
+    import pandas as pd
+
+    w = windows_df.copy().sort_values("mid").reset_index(drop=True)
+
+    w["candidate"] = w["clean_signal"] > threshold
+
+    events=[]
+    in_event=False
+
+    for i in range(len(w)):
+
+        if w.loc[i,"candidate"] and not in_event:
+            start_idx=i
+            in_event=True
+
+        if in_event:
+
+            is_last = i==(len(w)-1)
+            next_off = (not is_last and not w.loc[i+1,"candidate"])
+
+            if is_last or next_off:
+
+                sub=w.loc[start_idx:i].copy()
+
+                duration_hr=(
+                    sub["end"].max()-sub["start"].min()
+                ).total_seconds()/3600
+
+                if (
+                    len(sub)>=min_consec_windows
+                    and duration_hr>=min_duration_hr
+                    and duration_hr<=max_duration_hr
+                ):
+
+                    events.append({
+                        "start":sub["start"].min(),
+                        "end":sub["end"].max(),
+                        "mid":sub["mid"].median(),
+                        "duration_hr":duration_hr,
+                        "n_windows":len(sub),
+                        "peak_clean_signal":sub["clean_signal"].max(),
+                        "median_clean_signal":sub["clean_signal"].median()
+                    })
+
+                in_event=False
+
+
+    events_df=pd.DataFrame(events)
+
+    if len(events_df)<=1:
+        return events_df
+
+
+    merged=[]
+    current=events_df.iloc[0].copy()
+
+    for i in range(1,len(events_df)):
+
+        nxt=events_df.iloc[i]
+
+        gap=(
+            nxt["start"]-current["end"]
+        ).total_seconds()/3600
+
+        if gap<=merge_gap_hr:
+
+            current["end"]=nxt["end"]
+
+            current["duration_hr"]=(
+                current["end"]-current["start"]
+            ).total_seconds()/3600
+
+            current["n_windows"]+=nxt["n_windows"]
+
+            current["peak_clean_signal"]=max(
+                current["peak_clean_signal"],
+                nxt["peak_clean_signal"]
+            )
+
+        else:
+            merged.append(current)
+            current=nxt.copy()
+
+    merged.append(current)
+
+    out=pd.DataFrame(merged)
+
+    out.insert(
+        0,
+        "event_id",
+        np.arange(1,len(out)+1)
+    )
+
+    return out
+
+def validate_event_contrast(
+    windows_df,
+    events_df,
+    background_hr=12,
+    high_conf_threshold=3.0
+):
+
+    import numpy as np
+    import pandas as pd
+
+    checks=[]
+
+    for _,e in events_df.iterrows():
+
+        evt=windows_df[
+            (windows_df["mid"]>=e["start"]) &
+            (windows_df["mid"]<=e["end"])
+        ]
+
+        local=windows_df[
+            (windows_df["mid"]>=e["start"]-pd.Timedelta(hours=background_hr)) &
+            (windows_df["mid"]<=e["end"]+pd.Timedelta(hours=background_hr))
+        ]
+
+        outside=local[
+            (local["mid"]<e["start"]) |
+            (local["mid"]>e["end"])
+        ]
+
+        ratio=(
+            evt["clean_signal"].median() /
+            outside["clean_signal"].median()
+        )
+
+        checks.append({
+            "event_id":e["event_id"],
+            "contrast_ratio":ratio
+        })
+
+    checks_df=pd.DataFrame(checks)
+
+    out=events_df.merge(checks_df,on="event_id")
+
+    out["candidate_class"]=np.where(
+        out["contrast_ratio"]>high_conf_threshold,
+        "high_confidence_cme_candidate",
+        "lower_confidence_disturbance"
+    )
+
+    return out
+
 def detect_transient_events(
     windows_df: pd.DataFrame,
     config: Optional[TransientConfig] = None,
@@ -453,3 +608,471 @@ def detect_transient_events(
     windows_out.loc[w.index, "event_flag"] = w["event_flag"]
 
     return windows_out, events_df
+
+@dataclass
+class FinalCMEConfig:
+    threshold: float = 3.0
+    min_consec_windows: int = 2
+    min_duration_hr: float = 0.33
+    max_duration_hr: float = 12.0
+    merge_gap_hr: float = 0.67
+    local_background_hr: float = 12.0
+
+
+def load_final_cme_input(input_file) -> pd.DataFrame:
+    windows_df = pd.read_csv(input_file)
+
+    for col in ["start", "end", "mid"]:
+        windows_df[col] = pd.to_datetime(windows_df[col], errors="coerce")
+
+    required = ["start", "end", "mid", "phase_rms_rad", "clean_signal"]
+    missing = [c for c in required if c not in windows_df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    return windows_df.sort_values("mid").reset_index(drop=True)
+
+
+def detect_final_cme_candidates(
+    windows_df: pd.DataFrame,
+    year: str,
+    config: FinalCMEConfig,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+    w = windows_df.copy().sort_values("mid").reset_index(drop=True)
+    w["candidate"] = w["clean_signal"] > config.threshold
+
+    events = []
+    group_id = (w["candidate"] != w["candidate"].shift()).cumsum()
+
+    for _, sub in w[w["candidate"]].groupby(group_id):
+        duration_hr = (sub["end"].max() - sub["start"].min()).total_seconds() / 3600
+
+        if (
+            len(sub) >= config.min_consec_windows
+            and config.min_duration_hr <= duration_hr <= config.max_duration_hr
+        ):
+            row = {
+                "start": sub["start"].min(),
+                "end": sub["end"].max(),
+                "mid": sub["mid"].median(),
+                "duration_hr": duration_hr,
+                "n_windows": len(sub),
+                "peak_clean_signal": sub["clean_signal"].max(),
+                "median_clean_signal": sub["clean_signal"].median(),
+                "peak_phase_rms_rad": sub["phase_rms_rad"].max(),
+                "median_phase_rms_rad": sub["phase_rms_rad"].median(),
+            }
+
+            for col in [
+                "elongation_deg",
+                "p_point_AU",
+                "earth_sun_AU",
+                "los_closest_from_earth_AU",
+                "r_AU",
+                "delta_AU",
+                "hEcl_lon_deg",
+                "hEcl_lat_deg",
+            ]:
+                if col in sub.columns:
+                    row[f"{col}_median"] = sub[col].median()
+
+            events.append(row)
+
+    events_df = pd.DataFrame(events)
+
+    if events_df.empty:
+        final_events = events_df.copy()
+    else:
+        events_df = events_df.sort_values("start").reset_index(drop=True)
+
+        merged = []
+        current = events_df.iloc[0].copy()
+
+        for i in range(1, len(events_df)):
+            nxt = events_df.iloc[i]
+            gap_hr = (nxt["start"] - current["end"]).total_seconds() / 3600
+
+            if gap_hr <= config.merge_gap_hr:
+                current["end"] = nxt["end"]
+                current["mid"] = current["start"] + (current["end"] - current["start"]) / 2
+                current["duration_hr"] = (current["end"] - current["start"]).total_seconds() / 3600
+                current["n_windows"] += nxt["n_windows"]
+                current["peak_clean_signal"] = max(current["peak_clean_signal"], nxt["peak_clean_signal"])
+                current["median_clean_signal"] = np.nanmedian([current["median_clean_signal"], nxt["median_clean_signal"]])
+                current["peak_phase_rms_rad"] = max(current["peak_phase_rms_rad"], nxt["peak_phase_rms_rad"])
+                current["median_phase_rms_rad"] = np.nanmedian([current["median_phase_rms_rad"], nxt["median_phase_rms_rad"]])
+            else:
+                merged.append(current)
+                current = nxt.copy()
+
+        merged.append(current)
+        final_events = pd.DataFrame(merged)
+
+    final_events = final_events.reset_index(drop=True)
+    final_events.insert(0, "event_id", np.arange(1, len(final_events) + 1))
+    final_events.insert(1, "year", year)
+
+    return w, final_events
+
+
+def compute_final_cme_contrast(
+    windows_df: pd.DataFrame,
+    final_events: pd.DataFrame,
+    local_background_hr: float = 12.0,
+) -> pd.DataFrame:
+
+    rows = []
+
+    for _, e in final_events.iterrows():
+        evt = windows_df[
+            (windows_df["mid"] >= e["start"]) &
+            (windows_df["mid"] <= e["end"])
+        ]
+
+        local = windows_df[
+            (windows_df["mid"] >= e["start"] - pd.Timedelta(hours=local_background_hr)) &
+            (windows_df["mid"] <= e["end"] + pd.Timedelta(hours=local_background_hr))
+        ]
+
+        outside = local[
+            (local["mid"] < e["start"]) |
+            (local["mid"] > e["end"])
+        ]
+
+        outside_med = outside["clean_signal"].median()
+
+        rows.append({
+            "event_id": e["event_id"],
+            "inside_median": evt["clean_signal"].median(),
+            "outside_median": outside_med,
+            "contrast_ratio": evt["clean_signal"].median() / outside_med
+            if pd.notna(outside_med) and outside_med != 0
+            else np.nan,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def angular_separation_deg(a, b):
+    """
+    Smallest absolute angular separation between two angles in degrees.
+    """
+    return np.abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def flag_cactus_crossings(
+    events_df: pd.DataFrame,
+    cactus_df: pd.DataFrame,
+    p_col: str = "p_point_AU_median",
+    los_angle_col: str = "los_pa_deg_median",
+    cactus_time_col: str = "cme_launch_utc",
+    cactus_speed_col: str = "cme_vel_kms",
+    cactus_angle_col: str = "cme_pa_proxy_deg",
+    cactus_width_col: str = "cme_half_width_deg",
+    time_tolerance_hr: float = 12.0,
+    radial_tolerance_AU: float = 0.08,
+    angle_tolerance_deg: float = 15.0,
+) -> pd.DataFrame:
+    """
+    Flag final DSN candidates if a CACTus CME plausibly crosses the
+    Earth-VEX ray-path closest approach.
+
+    A match requires:
+    1. CME front reaches p_point_AU near the candidate time.
+    2. CME angular direction is consistent with the LOS angular position.
+    """
+
+    out = events_df.copy()
+
+    if out.empty:
+        return out
+
+    required_events = ["mid", p_col]
+    missing_events = [c for c in required_events if c not in out.columns]
+    if missing_events:
+        raise ValueError(f"events_df missing required columns: {missing_events}")
+
+    required_cactus = [
+        cactus_time_col,
+        cactus_speed_col,
+        cactus_angle_col,
+        cactus_width_col,
+    ]
+    missing_cactus = [c for c in required_cactus if c not in cactus_df.columns]
+    if missing_cactus:
+        raise ValueError(f"cactus_df missing required columns: {missing_cactus}")
+
+    cat = cactus_df.copy()
+    cat[cactus_time_col] = pd.to_datetime(cat[cactus_time_col], errors="coerce")
+    cat = cat.dropna(subset=[cactus_time_col, cactus_speed_col])
+
+    AU_KM = 149_597_870.7
+
+    flags = []
+
+    for _, e in out.iterrows():
+        event_mid = pd.to_datetime(e["mid"])
+        p_AU = e[p_col]
+
+        best_match = None
+        best_score = np.inf
+
+        for _, cme in cat.iterrows():
+            launch = cme[cactus_time_col]
+            speed_kms = cme[cactus_speed_col]
+
+            dt_hr = (event_mid - launch).total_seconds() / 3600.0
+
+            if dt_hr <= 0:
+                continue
+
+            predicted_AU = speed_kms * (dt_hr * 3600.0) / AU_KM
+            radial_error_AU = abs(predicted_AU - p_AU)
+
+            if radial_error_AU > radial_tolerance_AU:
+                continue
+
+            # Direction check
+            if los_angle_col in out.columns:
+                los_angle = e[los_angle_col]
+                cme_angle = cme[cactus_angle_col]
+                cme_half_width = cme[cactus_width_col]
+
+                angle_error = angular_separation_deg(los_angle, cme_angle)
+                angle_allowed = cme_half_width + angle_tolerance_deg
+
+                direction_ok = angle_error <= angle_allowed
+            else:
+                angle_error = np.nan
+                angle_allowed = np.nan
+                direction_ok = False
+
+            if not direction_ok:
+                continue
+
+            score = radial_error_AU + angle_error / 360.0
+
+            if score < best_score:
+                best_score = score
+                best_match = {
+                    "cactus_crosses_p_point": True,
+                    "matched_cactus_launch_utc": launch,
+                    "matched_cactus_speed_kms": speed_kms,
+                    "matched_cactus_pa_deg": cme[cactus_angle_col],
+                    "matched_cactus_half_width_deg": cme[cactus_width_col],
+                    "cactus_predicted_distance_AU": predicted_AU,
+                    "cactus_radial_error_AU": radial_error_AU,
+                    "cactus_angle_error_deg": angle_error,
+                    "cactus_angle_allowed_deg": angle_allowed,
+                }
+
+        if best_match is None:
+            best_match = {
+                "cactus_crosses_p_point": False,
+                "matched_cactus_launch_utc": pd.NaT,
+                "matched_cactus_speed_kms": np.nan,
+                "matched_cactus_pa_deg": np.nan,
+                "matched_cactus_half_width_deg": np.nan,
+                "cactus_predicted_distance_AU": np.nan,
+                "cactus_radial_error_AU": np.nan,
+                "cactus_angle_error_deg": np.nan,
+                "cactus_angle_allowed_deg": np.nan,
+            }
+
+        flags.append(best_match)
+
+    flags_df = pd.DataFrame(flags)
+
+    return pd.concat([out.reset_index(drop=True), flags_df], axis=1)
+
+def prepare_cactus_table(cactus_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardise local CACTus CME catalogue columns.
+
+    Expected raw columns:
+    month, cme_id, t0, dt0_hr, pa_deg, da_deg, v_km_s, ...
+    """
+    out = cactus_df.copy()
+
+    out = out.rename(columns={
+        "t0": "cme_launch_utc",
+        "v_km_s": "cme_vel_kms",
+        "pa_deg": "cme_pa_deg",
+        "da_deg": "cme_width_deg",
+    })
+
+    out["cme_launch_utc"] = pd.to_datetime(out["cme_launch_utc"], errors="coerce")
+    out["cme_half_width_deg"] = out["cme_width_deg"] / 2.0
+
+    return out
+
+
+def angular_separation_deg(a, b):
+    """
+    Smallest angular separation between two angles in degrees.
+    """
+    return np.abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+def match_cactus_to_dsn_candidates(
+    final_events: pd.DataFrame,
+    cactus_df: pd.DataFrame,
+    p_col: str = "p_point_AU_median",
+    event_angle_col: str | None = None,
+    radial_tolerance_AU: float = 0.20,
+    angle_tolerance_deg: float = 15.0,
+) -> pd.DataFrame:
+    """
+    Match DSN CME-like candidates against CACTus catalogue events.
+
+    A candidate is CACTus-supported when:
+    1. A CACTus CME front reaches the candidate P-point distance.
+    2. If an event angle is available, the event angle overlaps the
+       CACTus PA sector: pa_deg ± da_deg/2 plus tolerance.
+
+    This is a catalogue-consistency flag, not a full 3D CME proof.
+    """
+    AU_KM = 149_597_870.7
+
+    events = final_events.copy()
+    cactus = prepare_cactus_table(cactus_df)
+
+    if p_col not in events.columns:
+        raise ValueError(f"final_events missing required column: {p_col}")
+
+    required_cactus = [
+        "cme_launch_utc",
+        "cme_vel_kms",
+        "cme_pa_deg",
+        "cme_width_deg",
+        "cme_half_width_deg",
+    ]
+    missing = [c for c in required_cactus if c not in cactus.columns]
+    if missing:
+        raise ValueError(f"cactus_df missing required columns: {missing}")
+
+    use_angle = event_angle_col is not None and event_angle_col in events.columns
+
+    matches = []
+
+    for _, event in events.iterrows():
+        event_mid = pd.to_datetime(event["mid"])
+        p_AU = event[p_col]
+
+        best_match = None
+        best_score = np.inf
+
+        for _, cme in cactus.iterrows():
+            launch = cme["cme_launch_utc"]
+            speed = cme["cme_vel_kms"]
+
+            if pd.isna(launch) or pd.isna(speed):
+                continue
+
+            dt_hr = (event_mid - launch).total_seconds() / 3600.0
+
+            if dt_hr <= 0:
+                continue
+
+            predicted_AU = speed * dt_hr * 3600.0 / AU_KM
+            radial_error_AU = abs(predicted_AU - p_AU)
+
+            if radial_error_AU > radial_tolerance_AU:
+                continue
+
+            if use_angle:
+                event_angle = event[event_angle_col]
+                cme_pa = cme["cme_pa_deg"]
+                cme_half_width = cme["cme_half_width_deg"]
+
+                angle_error = angular_separation_deg(event_angle, cme_pa)
+                angle_allowed = cme_half_width + angle_tolerance_deg
+                direction_ok = angle_error <= angle_allowed
+
+                if not direction_ok:
+                    continue
+            else:
+                event_angle = np.nan
+                angle_error = np.nan
+                angle_allowed = np.nan
+                direction_ok = np.nan
+
+            score = radial_error_AU
+            if use_angle:
+                score += angle_error / 360.0
+
+            if score < best_score:
+                best_score = score
+                best_match = {
+                    "cactus_crosses_p_point": True,
+                    "cactus_direction_checked": use_angle,
+                    "cactus_direction_consistent": direction_ok,
+                    "matched_cactus_id": cme.get("cme_id", np.nan),
+                    "matched_cactus_launch_utc": launch,
+                    "matched_cactus_speed_kms": speed,
+                    "matched_cactus_pa_deg": cme["cme_pa_deg"],
+                    "matched_cactus_width_deg": cme["cme_width_deg"],
+                    "matched_cactus_half_width_deg": cme["cme_half_width_deg"],
+                    "cactus_predicted_distance_AU": predicted_AU,
+                    "cactus_radial_error_AU": radial_error_AU,
+                    "event_angle_deg": event_angle,
+                    "cactus_angle_error_deg": angle_error,
+                    "cactus_angle_allowed_deg": angle_allowed,
+                }
+
+        if best_match is None:
+            best_match = {
+                "cactus_crosses_p_point": False,
+                "cactus_direction_checked": use_angle,
+                "cactus_direction_consistent": False if use_angle else np.nan,
+                "matched_cactus_id": np.nan,
+                "matched_cactus_launch_utc": pd.NaT,
+                "matched_cactus_speed_kms": np.nan,
+                "matched_cactus_pa_deg": np.nan,
+                "matched_cactus_width_deg": np.nan,
+                "matched_cactus_half_width_deg": np.nan,
+                "cactus_predicted_distance_AU": np.nan,
+                "cactus_radial_error_AU": np.nan,
+                "event_angle_deg": np.nan,
+                "cactus_angle_error_deg": np.nan,
+                "cactus_angle_allowed_deg": np.nan,
+            }
+
+        matches.append(best_match)
+
+    matches_df = pd.DataFrame(matches)
+
+    old_cols = [c for c in matches_df.columns if c in events.columns]
+    events = events.drop(columns=old_cols)
+
+    out = pd.concat(
+        [events.reset_index(drop=True), matches_df.reset_index(drop=True)],
+        axis=1,
+    )
+
+    out = out.loc[:, ~out.columns.duplicated(keep="last")].copy()
+
+    return out
+
+def add_event_median_columns(
+    events_df: pd.DataFrame,
+    windows_df: pd.DataFrame,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    Add event-level median values from window-level columns.
+    """
+    out = events_df.copy()
+
+    for i, event in out.iterrows():
+        sub = windows_df[
+            (windows_df["mid"] >= event["start"]) &
+            (windows_df["mid"] <= event["end"])
+        ]
+
+        for col in columns:
+            if col in sub.columns:
+                out.loc[i, f"{col}_median"] = sub[col].median()
+
+    return out
